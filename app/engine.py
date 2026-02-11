@@ -106,10 +106,13 @@ def create_parts_request(company_id: str, requested_by: str,
     # Update status
     pr.status = "rfq_sent"
     db.commit()
+
+    # Capture values before closing session (ORM objects become detached after close)
+    pr_id = pr.id
     db.close()
 
     return {
-        "parts_request_id": pr.id,
+        "parts_request_id": pr_id,
         "status": "rfq_sent",
         "rfqs_sent": rfqs_sent,
         "supplier_count": len(rfqs_sent),
@@ -249,11 +252,14 @@ def process_supplier_response(from_number: str, message_body: str, message_sid: 
         print(f"   📊 {responded}/{total} suppliers have responded.")
 
     db.commit()
+
+    # Capture values before closing session
+    supplier_name = supplier.name
     db.close()
 
     return {
         "status": "quote_stored",
-        "supplier": supplier.name,
+        "supplier": supplier_name,
         "price": parsed.get("price"),
         "currency": parsed.get("currency"),
         "availability": parsed.get("availability"),
@@ -323,19 +329,21 @@ def get_quotes_for_request(parts_request_id: str) -> dict:
     )
     quotes_without_price = [q for q in quotes_data if not q.get("price")]
 
+    # Capture values before closing session
+    pr_data = {
+        "id": pr.id,
+        "part_description": pr.part_description,
+        "vehicle_info": pr.vehicle_info,
+        "quantity": pr.quantity,
+        "urgency": pr.urgency,
+        "deadline": pr.deadline,
+        "status": pr.status,
+        "created_at": pr.created_at.isoformat(),
+    }
     db.close()
 
     return {
-        "parts_request": {
-            "id": pr.id,
-            "part_description": pr.part_description,
-            "vehicle_info": pr.vehicle_info,
-            "quantity": pr.quantity,
-            "urgency": pr.urgency,
-            "deadline": pr.deadline,
-            "status": pr.status,
-            "created_at": pr.created_at.isoformat(),
-        },
+        "parts_request": pr_data,
         "quotes": quotes_with_price + quotes_without_price,
         "summary": {
             "total_suppliers": len(quotes_data),
@@ -419,12 +427,17 @@ def approve_quote(parts_request_id: str, quote_id: str, approved_by: str) -> dic
             print(f"   ❌ Failed to send decline to {other_supplier.name}: {e}")
 
     db.commit()
+
+    # Capture values before closing session
+    supplier_name = supplier.name
+    amount = quote.total_price or quote.price
+    currency = quote.currency
     db.close()
 
     return {
         "po_number": po_number,
-        "supplier": supplier.name,
-        "amount": quote.total_price or quote.price,
-        "currency": quote.currency,
+        "supplier": supplier_name,
+        "amount": amount,
+        "currency": currency,
         "status": "confirmed",
     }
