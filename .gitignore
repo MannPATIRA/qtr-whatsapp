@@ -1,0 +1,24 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+*.egg-info/
+.eggs/
+
+# Database (optional: remove if you want to track it)
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
