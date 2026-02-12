@@ -26,6 +26,8 @@ app = FastAPI(title="Hexa WhatsApp Procurement")
 # WEBHOOKS (Twilio calls these)
 # ============================================================
 
+from router import route_message
+
 @app.post("/webhook/whatsapp")
 async def whatsapp_webhook(request: Request):
     """Receive incoming WhatsApp messages from Twilio."""
@@ -38,14 +40,46 @@ async def whatsapp_webhook(request: Request):
 
     print(f"\n📨 Message from {from_number.replace('whatsapp:', '')} ({profile_name}): \"{body}\"")
 
-    # Process the response through the engine
-    result = engine.process_supplier_response(
-        from_number=from_number,
-        message_body=body,
-        message_sid=message_sid,
-    )
+    # Step 1: Route the message
+    route = route_message(from_number, body)
+    print(f"   Routed as: {route['type']}")
 
-    print(f"   Result: {result.get('status')}")
+    # Step 2: Handle based on type
+    if route["type"] == "parts_request":
+        result = engine.handle_whatsapp_parts_request(
+            from_number=from_number,
+            message_body=body,
+            message_sid=message_sid,
+            user_id=route.get("user_id"),
+            company_id=route.get("company_id"),
+        )
+        print(f"   Result: Parts request created → {result.get('supplier_count', 0)} RFQs sent")
+
+    elif route["type"] == "supplier_response":
+        result = engine.process_supplier_response(
+            from_number=from_number,
+            message_body=body,
+            message_sid=message_sid,
+        )
+        print(f"   Result: {result.get('status')}")
+
+    elif route["type"] == "status_inquiry":
+        # For now, just acknowledge. You can build a proper status lookup later.
+        from whatsapp import WhatsAppService
+        wa = WhatsAppService()
+        try:
+            wa.send_message(
+                from_number,
+                "Let me check on that for you. Please check the dashboard for the latest status, "
+                "or I'll get back to you shortly."
+            )
+        except Exception:
+            pass
+        result = {"status": "status_inquiry_acknowledged"}
+
+    else:
+        print(f"   ⚠️  Unknown message type. Logged but not processed.")
+        result = {"status": "unknown"}
 
     return Response(
         content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',

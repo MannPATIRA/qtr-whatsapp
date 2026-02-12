@@ -441,3 +441,101 @@ def approve_quote(parts_request_id: str, quote_id: str, approved_by: str) -> dic
         "currency": currency,
         "status": "confirmed",
     }
+
+
+def handle_whatsapp_parts_request(from_number: str, message_body: str,
+                                   message_sid: str, user_id: str = None,
+                                   company_id: str = None) -> dict:
+    """
+    A technician sent a parts request via WhatsApp.
+    Parse it, create the request, send RFQs — all automatically.
+
+    Returns the same result as create_parts_request, plus parsing info.
+    """
+    from parser import parse_parts_request
+
+    print(f"\n📱 WhatsApp parts request from {from_number}")
+    print(f"   Message: \"{message_body}\"")
+
+    # Step 1: Parse the natural language message into structured data
+    parsed = parse_parts_request(message_body)
+
+    print(f"   Parsed → Part: {parsed.get('part_description')}")
+    print(f"            Vehicle: {parsed.get('vehicle_info')}")
+    print(f"            Quantity: {parsed.get('quantity')}")
+    print(f"            Urgency: {parsed.get('urgency')}")
+    print(f"            Deadline: {parsed.get('deadline')}")
+    print(f"            Confidence: {parsed.get('confidence')}")
+
+    # Step 2: If confidence is too low, don't auto-create — flag for review
+    if parsed.get("confidence", 0) < 0.5:
+        print(f"   ⚠️  Low confidence ({parsed.get('confidence')}). Flagging for manual review.")
+
+        # Send a reply asking for clarification
+        try:
+            wa.send_message(
+                from_number,
+                f"Hi! I received your message but couldn't quite parse the parts request. "
+                f"Could you please send it in this format?\n\n"
+                f"need [part name] for [vehicle make model year]\n\n"
+                f"Example: need torque converter for Nissan Patrol Y62 2019 urgent"
+            )
+        except Exception as e:
+            print(f"   Failed to send clarification request: {e}")
+
+        return {
+            "status": "needs_clarification",
+            "parsed": parsed,
+            "raw_message": message_body,
+        }
+
+    # Step 3: Determine company and user
+    if not company_id:
+        company_id = "company-cedars"  # Default for now
+    if not user_id:
+        user_id = "user-khalid"  # Default technician
+
+    # Step 4: Create the parts request and send RFQs (reuse existing function)
+    result = create_parts_request(
+        company_id=company_id,
+        requested_by=user_id,
+        part_description=parsed["part_description"],
+        vehicle_info=parsed.get("vehicle_info", ""),
+        quantity=parsed.get("quantity", 1),
+        urgency=parsed.get("urgency", "normal"),
+        deadline=parsed.get("deadline", ""),
+        notes=parsed.get("notes", "") + f" [Via WhatsApp from {from_number}]",
+    )
+
+    # Step 5: Log the original message
+    db = SessionLocal()
+    log = MessageLog(
+        company_id=company_id,
+        direction="inbound",
+        from_number=from_number.replace("whatsapp:", ""),
+        body=message_body,
+        message_sid=message_sid,
+        source="whatsapp_app",
+    )
+    db.add(log)
+    db.commit()
+    db.close()
+
+    # Step 6: Send confirmation back to the technician
+    try:
+        supplier_count = result.get("supplier_count", 0)
+        wa.send_message(
+            from_number,
+            f"✅ Got it! I've created a request for:\n\n"
+            f"Part: {parsed['part_description']}\n"
+            f"Vehicle: {parsed.get('vehicle_info', 'Not specified')}\n"
+            f"Urgency: {parsed.get('urgency', 'normal')}\n\n"
+            f"RFQs sent to {supplier_count} suppliers. "
+            f"I'll notify you when quotes come in."
+        )
+    except Exception as e:
+        print(f"   Failed to send confirmation: {e}")
+
+    result["source"] = "whatsapp"
+    result["parsed_from"] = parsed
+    return result

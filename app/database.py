@@ -208,11 +208,11 @@ def seed_demo_data():
     # Create users
     users = [
         User(id="user-ahmed", company_id="company-cedars", name="Ahmed",
-             role="buyer", phone="+97455001111", approval_limit=500),
+             role="buyer", phone="+447449367127", approval_limit=500),
         User(id="user-raslan", company_id="company-cedars", name="Raslan",
-             role="approver", phone="+97455002222", approval_limit=0),
+             role="approver", phone="+447449367127", approval_limit=0),
         User(id="user-khalid", company_id="company-cedars", name="Khalid",
-             role="technician", phone="+97455003333"),
+             role="technician", phone="+447449367127"),
     ]
     db.add_all(users)
 
